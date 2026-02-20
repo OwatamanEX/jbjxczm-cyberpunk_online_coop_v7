@@ -237,6 +237,14 @@ body{
     </div>
     <div class="setup-label" id="pw-strength" style="min-height:10px"></div>
 
+    <!-- Difficulty -->
+    <div class="setup-label" style="margin-top:6px">▸ 難易度</div>
+    <div class="role-row" id="diff-row">
+      <button class="role-btn" id="diff-easy"   onclick="selectDiff('easy')">😌<br>EASY<br><small style="font-size:6px">のんびり</small></button>
+      <button class="role-btn" id="diff-normal" onclick="selectDiff('normal')">⚔️<br>NORMAL<br><small style="font-size:6px">標準</small></button>
+      <button class="role-btn" id="diff-hard"   onclick="selectDiff('hard')">💀<br>HARD<br><small style="font-size:6px">地獄</small></button>
+    </div>
+
     <!-- Role -->
     <div class="setup-label" style="margin-top:6px">▸ ロール選択</div>
     <div class="role-row">
@@ -377,8 +385,26 @@ function togglePwVisible() {
   el.type = el.type === 'password' ? 'text' : 'password';
 }
 
-// Setup UI helpers
-function selectRole(r) {
+// ---- DIFFICULTY ----
+let difficulty = 'normal'; // 'easy' | 'normal' | 'hard'
+const DIFF_CFG = {
+  easy:   { enemySpeedMul:0.65, enemyHpMul:0.6,  shootIntervalMul:1.6, bulletSpeedMul:0.7,  playerHp:5, playerLives:5, synergyRate:2.0 },
+  normal: { enemySpeedMul:1.0,  enemyHpMul:1.0,  shootIntervalMul:1.0, bulletSpeedMul:1.0,  playerHp:3, playerLives:3, synergyRate:1.0 },
+  hard:   { enemySpeedMul:1.4,  enemyHpMul:1.8,  shootIntervalMul:0.6, bulletSpeedMul:1.35, playerHp:2, playerLives:2, synergyRate:0.6 },
+};
+
+function getDiff(){ return DIFF_CFG[difficulty] || DIFF_CFG.normal; }
+
+function selectDiff(d){
+  difficulty = d;
+  ['easy','normal','hard'].forEach(x=>{
+    const btn = document.getElementById('diff-'+x);
+    btn.className = 'role-btn' + (x===d ? (d==='easy'?' p2-active':d==='hard'?' p1-active':' p1-active') : '');
+  });
+  checkReadyToConnect();
+}
+// デフォルトNORMAL選択
+selectDiff('normal');
   myRole = r;
   document.getElementById('btn-p1').className = 'role-btn' + (r===1?' p1-active':'');
   document.getElementById('btn-p2').className = 'role-btn' + (r===2?' p2-active':'');
@@ -784,13 +810,14 @@ let bossWarningTimer = 0;
 let flashAlpha     = 0;
 let shakeAmt       = 0;
 let synergy        = 0;
-let synergyBurstActive = false;
+let burstStartFrame  = -9999;
 let stateSync_timer = 0;
 let uidCounter     = 0;
 
 function makePlayer(role) {
-  return { x:0, y:0, hp:3, maxHp:3, shield:100, maxShield:100, lives:3,
-           invincible:0, size:10, speed:5, shootCooldown:0, bombs:3, role };
+  const d = getDiff();
+  return { x:0, y:0, hp:d.playerHp, maxHp:d.playerHp, shield:100, maxShield:100,
+           lives:d.playerLives, invincible:0, size:10, speed:5, shootCooldown:0, bombs:3, role };
 }
 let localPlayer  = makePlayer(1);
 let remotePlayer = makePlayer(2);
@@ -809,7 +836,7 @@ function beginGame() {
   document.getElementById('overlay').style.display = 'none';
 
   score=0; combo=0; frameN=0; gameTime=0; synergy=0;
-  bossActive=false; bossWarningTimer=0; synergyCooldown=0;
+  burstStartFrame=-9999; bossActive=false; bossWarningTimer=0;
   pBullets=[]; p2Bullets=[]; eBullets=[]; enemies=[]; particles=[]; powerups=[];
 
   localPlayer  = makePlayer(myRole);
@@ -847,9 +874,16 @@ function loadStage(s) {
 //  ENEMY SPAWNING
 // ================================================================
 function spawnEnemy(type, x, y, extra={}) {
+  const hm = getDiff().enemyHpMul;
+  const baseHp = extra.hp||1;
+  const hp = Math.max(1, Math.round(baseHp * hm));
   const e = { x,y,type,alive:true,vx:0,vy:0,angle:0,shootTimer:0,moveTimer:0,
-    hp:1,maxHp:1,size:12,color:'#ff00aa',score:100,phaseTimer:0,
-    uid: uidCounter++, ...extra };
+    hp,maxHp:hp,size:12,color:'#ff00aa',score:100,phaseTimer:0,
+    uid: uidCounter++, ...extra,
+    // overwrite hp/maxHp after spread so boss cfg isn't double-multiplied
+    hp: extra.hp ? extra.hp : hp,
+    maxHp: extra.maxHp ? extra.maxHp : hp,
+  };
   enemies.push(e); return e;
 }
 
@@ -939,12 +973,13 @@ function triggerBossWarning() {
 
 function spawnBoss(s) {
   bossActive=true;
+  const hm = getDiff().enemyHpMul;
   let cfg;
-  if(s===1) cfg={type:'boss1',x:W/2,y:-60, hp:350, maxHp:350, size:32,color:'#ff00aa',score:10000};
-  if(s===2) cfg={type:'boss2',x:W/2,y:-80, hp:550, maxHp:550, size:36,color:'#00ffff',score:20000};
-  if(s===3) cfg={type:'boss3',x:W/2,y:-100,hp:850, maxHp:850, size:44,color:'#ffee00',score:50000};
-  if(s===4) cfg={type:'boss4',x:W/2,y:-120,hp:1200,maxHp:1200,size:50,color:'#ff4400',score:80000};
-  if(s===5) cfg={type:'boss5',x:W/2,y:-140,hp:2000,maxHp:2000,size:60,color:'#ffffff',score:200000};
+  if(s===1) cfg={type:'boss1',x:W/2,y:-60,  hp:Math.floor(350*hm),  maxHp:Math.floor(350*hm),  size:32,color:'#ff00aa',score:10000};
+  if(s===2) cfg={type:'boss2',x:W/2,y:-80,  hp:Math.floor(550*hm),  maxHp:Math.floor(550*hm),  size:36,color:'#00ffff',score:20000};
+  if(s===3) cfg={type:'boss3',x:W/2,y:-100, hp:Math.floor(850*hm),  maxHp:Math.floor(850*hm),  size:44,color:'#ffee00',score:50000};
+  if(s===4) cfg={type:'boss4',x:W/2,y:-120, hp:Math.floor(1200*hm), maxHp:Math.floor(1200*hm), size:50,color:'#ff4400',score:80000};
+  if(s===5) cfg={type:'boss5',x:W/2,y:-140, hp:Math.floor(2000*hm), maxHp:Math.floor(2000*hm), size:60,color:'#ffffff',score:200000};
   spawnEnemy(cfg.type,cfg.x,cfg.y,cfg);
 }
 
@@ -958,143 +993,126 @@ function nearestPlayer(e) {
 }
 
 function updateEnemies() {
+  const dc = getDiff();
+  const sm = dc.enemySpeedMul, bm = dc.bulletSpeedMul, im = dc.shootIntervalMul;
   for (const e of enemies) {
     if (!e.alive) continue;
     e.moveTimer++; e.shootTimer++; e.angle+=0.04;
     const tgt=nearestPlayer(e);
     if(e.type==='grunt'){
-      e.vy=1.2+stage*0.3; e.x+=Math.sin(e.moveTimer*0.04)*1.5; e.y+=e.vy;
-      if(e.shootTimer>80-stage*8){ shootAt(e,tgt.x,tgt.y,2.5,'#ff4488'); e.shootTimer=0; }
+      e.vy=(1.2+stage*0.3)*sm; e.x+=Math.sin(e.moveTimer*0.04)*1.5; e.y+=e.vy;
+      if(e.shootTimer>Math.floor((80-stage*8)*im)){ shootAt(e,tgt.x,tgt.y,2.5*bm,'#ff4488'); e.shootTimer=0; }
     } else if(e.type==='zigzag'){
-      e.vy=1+stage*0.2; e.x+=Math.sin(e.moveTimer*0.08)*3; e.y+=e.vy;
-      if(e.shootTimer>100-stage*10){ fanShot(e,3,20,2.8,'#ff8800',tgt); e.shootTimer=0; }
+      e.vy=(1+stage*0.2)*sm; e.x+=Math.sin(e.moveTimer*0.08)*3; e.y+=e.vy;
+      if(e.shootTimer>Math.floor((100-stage*10)*im)){ fanShot(e,3,20,2.8*bm,'#ff8800',tgt); e.shootTimer=0; }
     } else if(e.type==='shooter'){
-      e.vy=e.y<H*0.25?0.8:0; e.x+=Math.sin(e.moveTimer*0.03)*1; e.y+=e.vy;
-      if(e.shootTimer>60-stage*5){ fanShot(e,5,15,2.2,'#ff2244',tgt); e.shootTimer=0; }
+      e.vy=e.y<H*0.25?0.8*sm:0; e.x+=Math.sin(e.moveTimer*0.03)*1; e.y+=e.vy;
+      if(e.shootTimer>Math.floor((60-stage*5)*im)){ fanShot(e,5,15,2.2*bm,'#ff2244',tgt); e.shootTimer=0; }
     } else if(e.type==='spinner'){
-      e.vy=e.y<H*0.3?0.6:0; e.x+=Math.sin(e.moveTimer*0.025)*1.2; e.y+=e.vy;
-      if(e.shootTimer>10){ circleShot(e,8,e.angle,2,'#aa00ff'); e.shootTimer=0; }
+      e.vy=e.y<H*0.3?0.6*sm:0; e.x+=Math.sin(e.moveTimer*0.025)*1.2; e.y+=e.vy;
+      if(e.shootTimer>Math.floor(10*im)){ circleShot(e,8,e.angle,2*bm,'#aa00ff'); e.shootTimer=0; }
     }
-    else if(e.type==='boss1') updateBoss1(e);
-    else if(e.type==='boss2') updateBoss2(e);
-    else if(e.type==='boss3') updateBoss3(e);
-    else if(e.type==='boss4') updateBoss4(e);
-    else if(e.type==='boss5') updateBoss5(e);
+    else if(e.type==='boss1') updateBoss1(e,bm,im);
+    else if(e.type==='boss2') updateBoss2(e,bm,im);
+    else if(e.type==='boss3') updateBoss3(e,bm,im);
+    else if(e.type==='boss4') updateBoss4(e,bm,im);
+    else if(e.type==='boss5') updateBoss5(e,bm,im);
     if(e.y>H+100) e.alive=false;
   }
   enemies=enemies.filter(e=>e.alive||e.type.startsWith('boss'));
 }
 
-function updateBoss1(e){
+function updateBoss1(e,bm=1,im=1){
   if(e.y<H*0.18) e.y+=0.8;
   e.x=W/2+Math.sin(e.moveTimer*0.012)*(W*0.3); e.phaseTimer++;
-  const p=e.hp/e.maxHp, t=nearestPlayer(e), iv=p>0.5?12:7;
-  if(e.phaseTimer%iv===0) fanShot(e,p>0.5?5:7,18,2.8,'#ff00aa',t);
-  if(e.phaseTimer%90===0) circleShot(e,12,e.angle,2.2,'#ff4488');
-  if(p<0.5&&e.phaseTimer%60===0) circleShot(e,16,e.angle+Math.PI/16,1.8,'#ff00ff');
-  if(!isSolo&&p2Connected&&e.phaseTimer%45===0){
-    shootAt(e,localPlayer.x,localPlayer.y,2.5,'#ff6600');
-    shootAt(e,remotePlayer.x,remotePlayer.y,2.5,'#ff6600');
+  const p=e.hp/e.maxHp, t=nearestPlayer(e), iv=Math.floor((p>0.5?12:7)*im);
+  if(e.phaseTimer%iv===0) fanShot(e,p>0.5?5:7,18,2.8*bm,'#ff00aa',t);
+  if(e.phaseTimer%Math.floor(90*im)===0) circleShot(e,12,e.angle,2.2*bm,'#ff4488');
+  if(p<0.5&&e.phaseTimer%Math.floor(60*im)===0) circleShot(e,16,e.angle+Math.PI/16,1.8*bm,'#ff00ff');
+  if(!isSolo&&p2Connected&&e.phaseTimer%Math.floor(45*im)===0){
+    shootAt(e,localPlayer.x,localPlayer.y,2.5*bm,'#ff6600');
+    shootAt(e,remotePlayer.x,remotePlayer.y,2.5*bm,'#ff6600');
   }
 }
-function updateBoss2(e){
+function updateBoss2(e,bm=1,im=1){
   if(e.y<H*0.2) e.y+=0.7;
   e.x=W/2+Math.sin(e.moveTimer*0.01)*(W*0.35); e.phaseTimer++;
-  const p=e.hp/e.maxHp, t=nearestPlayer(e), iv=p>0.6?10:6;
-  if(e.phaseTimer%iv===0) shootAt(e,t.x,t.y,3.5,'#00ffff');
-  if(e.phaseTimer%50===0) circleShot(e,14,e.angle,2.5,'#0088ff');
-  if(p<0.6&&e.phaseTimer%8===0) fanShot(e,9,12,3,'#00ffaa',t);
-  if(p<0.3&&e.phaseTimer%30===0) circleShot(e,20,e.angle*2,2,'#ffffff');
-  if(!isSolo&&p2Connected&&e.phaseTimer%35===0){
-    shootAt(e,localPlayer.x,localPlayer.y,3,'#00ff88');
-    shootAt(e,remotePlayer.x,remotePlayer.y,3,'#00ff88');
+  const p=e.hp/e.maxHp, t=nearestPlayer(e), iv=Math.floor((p>0.6?10:6)*im);
+  if(e.phaseTimer%iv===0) shootAt(e,t.x,t.y,3.5*bm,'#00ffff');
+  if(e.phaseTimer%Math.floor(50*im)===0) circleShot(e,14,e.angle,2.5*bm,'#0088ff');
+  if(p<0.6&&e.phaseTimer%Math.floor(8*im)===0) fanShot(e,9,12,3*bm,'#00ffaa',t);
+  if(p<0.3&&e.phaseTimer%Math.floor(30*im)===0) circleShot(e,20,e.angle*2,2*bm,'#ffffff');
+  if(!isSolo&&p2Connected&&e.phaseTimer%Math.floor(35*im)===0){
+    shootAt(e,localPlayer.x,localPlayer.y,3*bm,'#00ff88');
+    shootAt(e,remotePlayer.x,remotePlayer.y,3*bm,'#00ff88');
   }
 }
-function updateBoss3(e){
+function updateBoss3(e,bm=1,im=1){
   if(e.y<H*0.22) e.y+=0.5;
   e.x=W/2+Math.sin(e.moveTimer*0.009)*(W*0.38); e.phaseTimer++;
   const p=e.hp/e.maxHp, t=nearestPlayer(e);
-  if(e.phaseTimer%(p>0.7?8:p>0.4?5:3)===0) fanShot(e,p>0.4?7:11,15,3,'#ffee00',t);
-  if(e.phaseTimer%40===0) circleShot(e,p>0.5?16:20,e.angle,2.5,'#ff8800');
-  if(p<0.7&&e.phaseTimer%60===0){
-    for(let i=0;i<3;i++) setTimeout(()=>circleShot(e,24,e.angle+i*0.3,2,'#ff4400'),i*200);
+  if(e.phaseTimer%Math.floor((p>0.7?8:p>0.4?5:3)*im)===0) fanShot(e,p>0.4?7:11,15,3*bm,'#ffee00',t);
+  if(e.phaseTimer%Math.floor(40*im)===0) circleShot(e,p>0.5?16:20,e.angle,2.5*bm,'#ff8800');
+  if(p<0.7&&e.phaseTimer%Math.floor(60*im)===0){
+    for(let i=0;i<3;i++) setTimeout(()=>circleShot(e,24,e.angle+i*0.3,2*bm,'#ff4400'),i*200);
   }
-  if(p<0.4&&e.phaseTimer%5===0) shootAt(e,t.x,t.y,4,'#ff0000');
-  if(p<0.2&&e.phaseTimer%20===0) circleShot(e,32,e.angle*3,1.8,'#ffffff');
-  if(!isSolo&&p2Connected&&e.phaseTimer%25===0){
-    circleShot(e,4,Math.atan2(localPlayer.y-e.y,localPlayer.x-e.x),3,'#ffaaff');
-    circleShot(e,4,Math.atan2(remotePlayer.y-e.y,remotePlayer.x-e.x),3,'#aaffff');
+  if(p<0.4&&e.phaseTimer%Math.floor(5*im)===0) shootAt(e,t.x,t.y,4*bm,'#ff0000');
+  if(p<0.2&&e.phaseTimer%Math.floor(20*im)===0) circleShot(e,32,e.angle*3,1.8*bm,'#ffffff');
+  if(!isSolo&&p2Connected&&e.phaseTimer%Math.floor(25*im)===0){
+    circleShot(e,4,Math.atan2(localPlayer.y-e.y,localPlayer.x-e.x),3*bm,'#ffaaff');
+    circleShot(e,4,Math.atan2(remotePlayer.y-e.y,remotePlayer.x-e.x),3*bm,'#aaffff');
   }
 }
-
-// BOSS 4 — SPLITTER: spawns minions, fires laser sweeps
-function updateBoss4(e){
+function updateBoss4(e,bm=1,im=1){
   if(e.y<H*0.2) e.y+=0.6;
   e.phaseTimer++;
   const p=e.hp/e.maxHp, t=nearestPlayer(e);
-  // Figure-8 movement
   e.x=W/2+Math.sin(e.moveTimer*0.011)*(W*0.38);
   e.y=Math.min(H*0.2, e.y) + Math.sin(e.moveTimer*0.022)*18;
-
-  const iv=p>0.7?9:p>0.4?6:4;
-  if(e.phaseTimer%iv===0) fanShot(e,p>0.4?8:13,14,3.2,'#ff4400',t);
-  if(e.phaseTimer%55===0) circleShot(e,18,e.angle,2.8,'#ff8822');
-  if(p<0.7&&e.phaseTimer%80===0){
-    // Laser sweep: rapid fan
-    for(let i=0;i<8;i++) setTimeout(()=>fanShot(e,3,60,4,'#ff2200',t),i*60);
+  const iv=Math.floor((p>0.7?9:p>0.4?6:4)*im);
+  if(e.phaseTimer%iv===0) fanShot(e,p>0.4?8:13,14,3.2*bm,'#ff4400',t);
+  if(e.phaseTimer%Math.floor(55*im)===0) circleShot(e,18,e.angle,2.8*bm,'#ff8822');
+  if(p<0.7&&e.phaseTimer%Math.floor(80*im)===0){
+    for(let i=0;i<8;i++) setTimeout(()=>fanShot(e,3,60,4*bm,'#ff2200',t),i*60);
   }
-  if(p<0.5&&e.phaseTimer%40===0) circleShot(e,24,e.angle*2,2.2,'#ffaa00');
-  if(p<0.3&&e.phaseTimer%6===0) shootAt(e,t.x,t.y,4.5,'#ff0000');
-  if(p<0.15&&e.phaseTimer%25===0) circleShot(e,36,e.angle,2,'#ffffff');
-  // Minion spawn
+  if(p<0.5&&e.phaseTimer%Math.floor(40*im)===0) circleShot(e,24,e.angle*2,2.2*bm,'#ffaa00');
+  if(p<0.3&&e.phaseTimer%Math.floor(6*im)===0) shootAt(e,t.x,t.y,4.5*bm,'#ff0000');
+  if(p<0.15&&e.phaseTimer%Math.floor(25*im)===0) circleShot(e,36,e.angle,2*bm,'#ffffff');
   if(e.phaseTimer%300===0&&enemies.filter(x=>x.alive&&!x.type.startsWith('boss')).length<10){
     spawnEnemy('spinner',e.x-50,e.y,{hp:3,maxHp:3,size:14,color:'#ff4400',score:500});
     spawnEnemy('spinner',e.x+50,e.y,{hp:3,maxHp:3,size:14,color:'#ff4400',score:500});
     playSfx('spawn');
   }
-  if(!isSolo&&p2Connected&&e.phaseTimer%30===0){
-    shootAt(e,localPlayer.x,localPlayer.y,3.5,'#ff6600');
-    shootAt(e,remotePlayer.x,remotePlayer.y,3.5,'#ff6600');
+  if(!isSolo&&p2Connected&&e.phaseTimer%Math.floor(30*im)===0){
+    shootAt(e,localPlayer.x,localPlayer.y,3.5*bm,'#ff6600');
+    shootAt(e,remotePlayer.x,remotePlayer.y,3.5*bm,'#ff6600');
   }
 }
-
-// BOSS 5 — OMEGA: ultimate final boss, all patterns combined
-function updateBoss5(e){
+function updateBoss5(e,bm=1,im=1){
   if(e.y<H*0.22) e.y+=0.4;
   e.phaseTimer++;
   const p=e.hp/e.maxHp, t=nearestPlayer(e);
-  // Orbital movement
-  const orbitR=W*0.36;
   const orbitSpd=0.008*(p<0.3?1.6:p<0.6?1.2:1);
-  e.x=W/2+Math.sin(e.moveTimer*orbitSpd)*orbitR;
-
-  // Rainbow color shift
+  e.x=W/2+Math.sin(e.moveTimer*orbitSpd)*(W*0.36);
   const hue=e.phaseTimer*2%360;
   e.color=`hsl(${hue},100%,60%)`;
-
-  const iv=p>0.75?7:p>0.5?5:p>0.25?3:2;
-  if(e.phaseTimer%iv===0) fanShot(e,p>0.5?9:14,13,3.5,e.color,t);
-  if(e.phaseTimer%35===0) circleShot(e,p>0.5?20:28,e.angle,3,e.color);
-  if(e.phaseTimer%50===0) circleShot(e,16,e.angle+Math.PI/16,2.5,'#ffffff');
-
-  if(p<0.75&&e.phaseTimer%70===0){
-    for(let i=0;i<5;i++) setTimeout(()=>circleShot(e,20,e.angle+i*0.25,2.8,e.color),i*120);
+  const iv=Math.floor((p>0.75?7:p>0.5?5:p>0.25?3:2)*im);
+  if(e.phaseTimer%iv===0) fanShot(e,p>0.5?9:14,13,3.5*bm,e.color,t);
+  if(e.phaseTimer%Math.floor(35*im)===0) circleShot(e,p>0.5?20:28,e.angle,3*bm,e.color);
+  if(e.phaseTimer%Math.floor(50*im)===0) circleShot(e,16,e.angle+Math.PI/16,2.5*bm,'#ffffff');
+  if(p<0.75&&e.phaseTimer%Math.floor(70*im)===0){
+    for(let i=0;i<5;i++) setTimeout(()=>circleShot(e,20,e.angle+i*0.25,2.8*bm,e.color),i*120);
   }
-  if(p<0.5&&e.phaseTimer%4===0) shootAt(e,t.x,t.y,4.5,e.color);
-  if(p<0.35&&e.phaseTimer%30===0){
-    circleShot(e,32,e.angle,2.2,'#ff00ff');
-    circleShot(e,32,e.angle+Math.PI/32,2.2,'#00ffff');
+  if(p<0.5&&e.phaseTimer%Math.floor(4*im)===0) shootAt(e,t.x,t.y,4.5*bm,e.color);
+  if(p<0.35&&e.phaseTimer%Math.floor(30*im)===0){
+    circleShot(e,32,e.angle,2.2*bm,'#ff00ff');
+    circleShot(e,32,e.angle+Math.PI/32,2.2*bm,'#00ffff');
   }
-  if(p<0.2&&e.phaseTimer%3===0){
-    fanShot(e,16,11,4,'#ffffff',t);
-    shootAt(e,t.x,t.y,5,'#ffffff');
-  }
-  if(p<0.1&&e.phaseTimer%20===0) circleShot(e,40,e.angle*4,2,e.color);
-
-  // Always shoot both players
-  if(!isSolo&&p2Connected&&e.phaseTimer%20===0){
-    shootAt(e,localPlayer.x,localPlayer.y,4,e.color);
-    shootAt(e,remotePlayer.x,remotePlayer.y,4,e.color);
+  if(p<0.2&&e.phaseTimer%Math.floor(3*im)===0) fanShot(e,16,11,4*bm,'#ffffff',t);
+  if(p<0.1&&e.phaseTimer%Math.floor(20*im)===0) circleShot(e,40,e.angle*4,2*bm,e.color);
+  if(!isSolo&&p2Connected&&e.phaseTimer%Math.floor(20*im)===0){
+    shootAt(e,localPlayer.x,localPlayer.y,4*bm,e.color);
+    shootAt(e,remotePlayer.x,remotePlayer.y,4*bm,e.color);
   }
 }
 
@@ -1174,21 +1192,18 @@ function killEnemy(e){
   e.alive=false;
   const delta=e.score*(1+combo*0.1); score+=delta;
   if(myRole===1) send('score-delta',{delta});
-  addCombo(3);
-  if(!synergyBurstActive && synergyCooldown<=0) synergy=Math.min(100,synergy+5);
+  addCombo(3); // addCombo内でsynergy加算・バースト発動チェックを一元管理
   spawnExplosion(e.x,e.y,e.color,e.size);
   playSfx(e.type.startsWith('boss')?'explosion':'hit');
   if(Math.random()<0.22) spawnPowerup(e.x,e.y);
   if(e.type.startsWith('boss')) onBossKilled();
 }
 
-let synergyCooldown = 0; // cooldown frames after burst ends
-
 function addCombo(n=1){
   combo+=n; comboTimer=150;
-  // Don't charge synergy while burst is active or in cooldown
-  if(!synergyBurstActive && synergyCooldown<=0){
-    synergy=Math.min(100,synergy+1);
+  if(!isBurstActive() && !isBurstCooldown()){
+    const rate = getDiff().synergyRate;
+    synergy=Math.min(100, synergy + n*rate);
     if(synergy>=100) triggerSynergyBurst();
   }
 }
@@ -1223,14 +1238,28 @@ function remoteBomb(){
 }
 
 // ================================================================
-//  SYNERGY BURST
+//  SYNERGY BURST — フレーム番号比較方式（フラグなし・確実に終了）
 // ================================================================
-let synergyBurstFramesLeft = 0; // P1のみ使用
+let burstStartFrame  = -9999; // バースト開始フレーム
+const BURST_DURATION = 300;   // 5秒(60fps×5)
+const BURST_COOLDOWN = 360;   // クールダウン 6秒
+
+function isBurstActive(){ return (frameN - burstStartFrame) < BURST_DURATION; }
+function isBurstCooldown(){ return (frameN - burstStartFrame) < (BURST_DURATION + BURST_COOLDOWN); }
+
+// 後方互換のためのゲッター（他コードから参照されているsynergyBurstActive）
+Object.defineProperty(window,'synergyBurstActive',{ get(){ return isBurstActive(); } });
+
+function getSynergyBarPct(){
+  if(isBurstActive()) return Math.max(0, 100 * (1 - (frameN-burstStartFrame)/BURST_DURATION));
+  if(isBurstCooldown()) return 0;
+  return synergy;
+}
 
 function triggerSynergyBurst(){
-  if(synergyBurstActive) return;
-  synergyBurstActive=true;
-  synergyBurstFramesLeft=300; // 5秒
+  if(isBurstActive() || isBurstCooldown()) return; // 二重発動・クールダウン中は無効
+  burstStartFrame = frameN;
+  synergy = 0;
   addNotice('⚡ SYNERGY BURST ⚡','#ffee00'); flashAlpha=1.2; shakeCanvas(1.5);
   playSfx('synergy');
   for(const e of enemies){
@@ -1241,14 +1270,10 @@ function triggerSynergyBurst(){
 }
 
 function updateSynergyBurst(){
-  // P1だけがカウントダウン管理。P2はstate-syncで受け取るだけ
-  if(!synergyBurstActive || myRole!==1) return;
-  synergyBurstFramesLeft--;
-  synergy = Math.max(0, 100 * synergyBurstFramesLeft / 300);
-  if(synergyBurstFramesLeft<=0){
-    synergyBurstActive=false;
+  const wasActive = (frameN-1 - burstStartFrame) < BURST_DURATION;
+  const nowActive = isBurstActive();
+  if(wasActive && !nowActive){
     synergy=0;
-    synergyCooldown=300;
     addNotice('SYNERGY DEPLETED','#445566');
   }
 }
@@ -1322,8 +1347,7 @@ function updateLocalPlayer(){
 
   if(localPlayer.invincible>0) localPlayer.invincible--;
   if(comboTimer>0){ comboTimer--; if(!comboTimer) combo=0; }
-  updateSynergyBurst(); // フレームベースでバースト管理
-  if(synergyCooldown>0){ synergyCooldown--; synergy=0; }
+  updateSynergyBurst();
 
   // Boss warning countdown
   if(bossWarningTimer>0){
@@ -1347,7 +1371,7 @@ function broadcastStateSync(){
       type:e.type,angle:e.angle,size:e.size,color:e.color,phaseTimer:e.phaseTimer||0,moveTimer:e.moveTimer})),
     eBullets:eBullets.slice(0,300).map(b=>({x:b.x,y:b.y,vx:b.vx,vy:b.vy,color:b.color,size:b.size})),
     bossActive,stage,gameTime,score,combo,synergy,
-    synergyBurstActive, synergyBurstFramesLeft,
+    burstStartFrame,
     powerups:powerups.map(p=>({...p})),
   });
 }
@@ -1358,21 +1382,16 @@ function applyStateSync(d){
   if(d.bossActive !== undefined) bossActive = d.bossActive;
   if(d.gameTime !== undefined && Math.abs(d.gameTime-gameTime) > 60) gameTime = d.gameTime;
   if(d.score !== undefined) score = d.score;
-  if(d.synergy !== undefined) synergy = d.synergy;
+  if(d.synergy !== undefined && !isBurstActive()) synergy = d.synergy;
   if(d.combo !== undefined){ combo = d.combo; comboTimer = Math.max(comboTimer, 60); }
   if(d.powerups) powerups = d.powerups;
 
-  // P2はP1のバースト状態を完全にミラー（自分では管理しない）
-  if(d.synergyBurstActive !== undefined){
-    const wasActive = synergyBurstActive;
-    synergyBurstActive = d.synergyBurstActive;
-    if(d.synergyBurstFramesLeft !== undefined) synergyBurstFramesLeft = d.synergyBurstFramesLeft;
-    // バースト中はsynergyをゲージ表示用に更新
-    if(synergyBurstActive) synergy = Math.max(0, 100 * synergyBurstFramesLeft / 300);
-    if(wasActive && !synergyBurstActive){
-      synergy=0; synergyCooldown=300;
-      addNotice('SYNERGY DEPLETED','#445566');
-    }
+  // P2はP1のburstStartFrameをそのまま受け取る
+  if(d.burstStartFrame !== undefined){
+    const wasActive = isBurstActive();
+    burstStartFrame = d.burstStartFrame;
+    if(wasActive && !isBurstActive()) addNotice('SYNERGY DEPLETED','#445566');
+    if(!wasActive && isBurstActive()) addNotice('⚡ SYNERGY BURST ⚡','#ffee00');
   }
 
   if(d.stage && d.stage !== stage){
@@ -1483,7 +1502,20 @@ function updateHUDDisplay(){
   document.getElementById('p2-bombs').textContent=p2.bombs;
   document.getElementById('hud-score').textContent=String(Math.floor(score)).padStart(7,'0');
   document.getElementById('combo-hud').textContent=combo>0?`COMBO ${combo}×`:'';
-  document.getElementById('synergy-fill').style.width=synergy+'%';
+  // Synergy bar
+  const synergyPct = getSynergyBarPct();
+  const synergyFill = document.getElementById('synergy-fill');
+  synergyFill.style.width = synergyPct+'%';
+  if(isBurstActive()){
+    synergyFill.style.background='linear-gradient(90deg,#ffee00,#ff8800)';
+    synergyFill.style.boxShadow='0 0 12px #ffee00';
+  } else if(isBurstCooldown()){
+    synergyFill.style.background='#333';
+    synergyFill.style.boxShadow='none';
+  } else {
+    synergyFill.style.background='linear-gradient(90deg,var(--p1),var(--p2))';
+    synergyFill.style.boxShadow='0 0 8px var(--p2)';
+  }
 }
 
 // ================================================================
@@ -1720,9 +1752,8 @@ function clearGameScreen(){
   fl.style.background='rgba(255,255,255,0)';
   document.getElementById('boss-warning').style.display='none';
   bossWarningTimer=0;
-  synergyBurstActive=false;
-  synergyBurstFramesLeft=0;
-  synergy=0;
+  burstStartFrame = -9999;
+  synergy = 0;
   shakeAmt=0;
 }
 
