@@ -8,20 +8,9 @@
 
 ## 🎮 プレイ
 
-**[▶ GitHub Pages でプレイ](https://あなたのユーザー名.github.io/リポジトリ名/)**
+**[▶ GitHub Pages でプレイ](https://owatamanex.github.io/jbjxczm-cyberpunk_online_coop_v7/)**
 
 ---
-
-## 🚀 GitHub Pages 公開手順
-
-1. このリポジトリを GitHub に Push
-2. リポジトリの **Settings → Pages**
-3. Source: **Deploy from a branch**
-4. Branch: **main** / **root** → Save
-5. 数分後に `https://ユーザー名.github.io/リポジトリ名/` で公開完了
-
----
-
 ## 🔑 遊び方
 
 1. [ably.com](https://ably.com) で無料アカウントを作成し **API Key** を取得
