@@ -58,4 +58,4 @@
 
 ---
 
-*Built with ❤️ and Claude*
+*Built with ❤️ and Claude + Me*
