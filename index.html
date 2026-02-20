@@ -24,6 +24,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Share+Tech+Mono&display=swap');
 
 *{margin:0;padding:0;box-sizing:border-box;}
+*, *::before, *::after { cursor: none !important; }
 :root{
   --p1:#00ffff; --p2:#ff00aa;
   --yellow:#ffee00;--bg:#020408;--red:#ff1a3c;--green:#00ff88;--dim:#1a3040;
@@ -650,9 +651,14 @@ const cursorEl = document.getElementById('cursor');
 let mx = W/2, my = H/2;
 window.addEventListener('mousemove', e => {
   mx = e.clientX; my = e.clientY;
-  cursorEl.style.left = mx+'px'; cursorEl.style.top = my+'px';
+  cursorEl.style.left = mx+'px';
+  cursorEl.style.top  = my+'px';
 });
-window.addEventListener('touchmove', e => { mx=e.touches[0].clientX; my=e.touches[0].clientY; }, {passive:true});
+window.addEventListener('touchmove', e => {
+  mx=e.touches[0].clientX; my=e.touches[0].clientY;
+  cursorEl.style.left = mx+'px';
+  cursorEl.style.top  = my+'px';
+}, {passive:true});
 
 // ================================================================
 //  WEB AUDIO ENGINE
@@ -1312,7 +1318,7 @@ function updatePowerups(){
 // ================================================================
 //  PLAYER UPDATE
 // ================================================================
-let shooting=false, autoShoot=true;
+let shooting=false;
 
 function updateLocalPlayer(){
   const dx=mx-localPlayer.x, dy=my-localPlayer.y;
@@ -1325,9 +1331,9 @@ function updateLocalPlayer(){
   // Send position every 2 frames
   if(frameN%2===0) send('pos',{x:localPlayer.x,y:localPlayer.y,inv:localPlayer.invincible});
 
-  // Shoot
+  // Shoot（クリック/タップ/Space押しっぱなしで連射）
   localPlayer.shootCooldown--;
-  if((shooting||autoShoot)&&localPlayer.shootCooldown<=0){
+  if(shooting && localPlayer.shootCooldown<=0){
     localPlayer.shootCooldown=synergyBurstActive?4:7;
     const col=colorFor(myRole), spd2=10;
     const nb=[
